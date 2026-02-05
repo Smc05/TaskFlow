@@ -14,7 +14,7 @@ class TaskFlowApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
       home: const BoardScreen(
-        boardId: 'default-board',
+        boardId: '00000000-0000-0000-0000-000000000000',
         boardName: AppStrings.appName,
       ),
     );
