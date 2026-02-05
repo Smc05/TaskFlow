@@ -6,7 +6,7 @@ part of 'tasks_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$tasksByStatusHash() => r'ae168aa0a62f3b3bc1f18ec55e047e34e000254b';
+String _$tasksStreamHash() => r'7b6eef59bd4fd2dfa62c5da1e0f46742a70b47dc';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -29,22 +29,153 @@ class _SystemHash {
   }
 }
 
-/// Provider for tasks grouped by status
+/// Stream provider for real-time tasks from Supabase
+///
+/// Copied from [tasksStream].
+@ProviderFor(tasksStream)
+const tasksStreamProvider = TasksStreamFamily();
+
+/// Stream provider for real-time tasks from Supabase
+///
+/// Copied from [tasksStream].
+class TasksStreamFamily extends Family<AsyncValue<List<Task>>> {
+  /// Stream provider for real-time tasks from Supabase
+  ///
+  /// Copied from [tasksStream].
+  const TasksStreamFamily();
+
+  /// Stream provider for real-time tasks from Supabase
+  ///
+  /// Copied from [tasksStream].
+  TasksStreamProvider call(String boardId) {
+    return TasksStreamProvider(boardId);
+  }
+
+  @override
+  TasksStreamProvider getProviderOverride(
+    covariant TasksStreamProvider provider,
+  ) {
+    return call(provider.boardId);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'tasksStreamProvider';
+}
+
+/// Stream provider for real-time tasks from Supabase
+///
+/// Copied from [tasksStream].
+class TasksStreamProvider extends AutoDisposeStreamProvider<List<Task>> {
+  /// Stream provider for real-time tasks from Supabase
+  ///
+  /// Copied from [tasksStream].
+  TasksStreamProvider(String boardId)
+    : this._internal(
+        (ref) => tasksStream(ref as TasksStreamRef, boardId),
+        from: tasksStreamProvider,
+        name: r'tasksStreamProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$tasksStreamHash,
+        dependencies: TasksStreamFamily._dependencies,
+        allTransitiveDependencies: TasksStreamFamily._allTransitiveDependencies,
+        boardId: boardId,
+      );
+
+  TasksStreamProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.boardId,
+  }) : super.internal();
+
+  final String boardId;
+
+  @override
+  Override overrideWith(
+    Stream<List<Task>> Function(TasksStreamRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: TasksStreamProvider._internal(
+        (ref) => create(ref as TasksStreamRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        boardId: boardId,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeStreamProviderElement<List<Task>> createElement() {
+    return _TasksStreamProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is TasksStreamProvider && other.boardId == boardId;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, boardId.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin TasksStreamRef on AutoDisposeStreamProviderRef<List<Task>> {
+  /// The parameter `boardId` of this provider.
+  String get boardId;
+}
+
+class _TasksStreamProviderElement
+    extends AutoDisposeStreamProviderElement<List<Task>>
+    with TasksStreamRef {
+  _TasksStreamProviderElement(super.provider);
+
+  @override
+  String get boardId => (origin as TasksStreamProvider).boardId;
+}
+
+String _$tasksByStatusHash() => r'db4ab433728164a89f2a6ff59a9f7bdb572d9d14';
+
+/// Provider for tasks grouped by status (synchronous version for compatibility)
 ///
 /// Copied from [tasksByStatus].
 @ProviderFor(tasksByStatus)
 const tasksByStatusProvider = TasksByStatusFamily();
 
-/// Provider for tasks grouped by status
+/// Provider for tasks grouped by status (synchronous version for compatibility)
 ///
 /// Copied from [tasksByStatus].
 class TasksByStatusFamily extends Family<Map<TaskStatus, List<Task>>> {
-  /// Provider for tasks grouped by status
+  /// Provider for tasks grouped by status (synchronous version for compatibility)
   ///
   /// Copied from [tasksByStatus].
   const TasksByStatusFamily();
 
-  /// Provider for tasks grouped by status
+  /// Provider for tasks grouped by status (synchronous version for compatibility)
   ///
   /// Copied from [tasksByStatus].
   TasksByStatusProvider call(String boardId) {
@@ -73,12 +204,12 @@ class TasksByStatusFamily extends Family<Map<TaskStatus, List<Task>>> {
   String? get name => r'tasksByStatusProvider';
 }
 
-/// Provider for tasks grouped by status
+/// Provider for tasks grouped by status (synchronous version for compatibility)
 ///
 /// Copied from [tasksByStatus].
 class TasksByStatusProvider
     extends AutoDisposeProvider<Map<TaskStatus, List<Task>>> {
-  /// Provider for tasks grouped by status
+  /// Provider for tasks grouped by status (synchronous version for compatibility)
   ///
   /// Copied from [tasksByStatus].
   TasksByStatusProvider(String boardId)
@@ -160,31 +291,31 @@ class _TasksByStatusProviderElement
   String get boardId => (origin as TasksByStatusProvider).boardId;
 }
 
-String _$tasksNotifierHash() => r'ee88b2375bfdc8bf91f4e946b90f289e6c6663fa';
+String _$tasksNotifierHash() => r'271ddc6f536f67e54497e4f5cc9c20177935f3a0';
 
 abstract class _$TasksNotifier
-    extends BuildlessAutoDisposeNotifier<List<Task>> {
+    extends BuildlessAutoDisposeAsyncNotifier<List<Task>> {
   late final String boardId;
 
-  List<Task> build(String boardId);
+  FutureOr<List<Task>> build(String boardId);
 }
 
-/// State notifier managing all tasks for a board
+/// State notifier managing task operations for a board
 ///
 /// Copied from [TasksNotifier].
 @ProviderFor(TasksNotifier)
 const tasksNotifierProvider = TasksNotifierFamily();
 
-/// State notifier managing all tasks for a board
+/// State notifier managing task operations for a board
 ///
 /// Copied from [TasksNotifier].
-class TasksNotifierFamily extends Family<List<Task>> {
-  /// State notifier managing all tasks for a board
+class TasksNotifierFamily extends Family<AsyncValue<List<Task>>> {
+  /// State notifier managing task operations for a board
   ///
   /// Copied from [TasksNotifier].
   const TasksNotifierFamily();
 
-  /// State notifier managing all tasks for a board
+  /// State notifier managing task operations for a board
   ///
   /// Copied from [TasksNotifier].
   TasksNotifierProvider call(String boardId) {
@@ -213,12 +344,12 @@ class TasksNotifierFamily extends Family<List<Task>> {
   String? get name => r'tasksNotifierProvider';
 }
 
-/// State notifier managing all tasks for a board
+/// State notifier managing task operations for a board
 ///
 /// Copied from [TasksNotifier].
 class TasksNotifierProvider
-    extends AutoDisposeNotifierProviderImpl<TasksNotifier, List<Task>> {
-  /// State notifier managing all tasks for a board
+    extends AutoDisposeAsyncNotifierProviderImpl<TasksNotifier, List<Task>> {
+  /// State notifier managing task operations for a board
   ///
   /// Copied from [TasksNotifier].
   TasksNotifierProvider(String boardId)
@@ -248,7 +379,7 @@ class TasksNotifierProvider
   final String boardId;
 
   @override
-  List<Task> runNotifierBuild(covariant TasksNotifier notifier) {
+  FutureOr<List<Task>> runNotifierBuild(covariant TasksNotifier notifier) {
     return notifier.build(boardId);
   }
 
@@ -269,7 +400,7 @@ class TasksNotifierProvider
   }
 
   @override
-  AutoDisposeNotifierProviderElement<TasksNotifier, List<Task>>
+  AutoDisposeAsyncNotifierProviderElement<TasksNotifier, List<Task>>
   createElement() {
     return _TasksNotifierProviderElement(this);
   }
@@ -290,13 +421,13 @@ class TasksNotifierProvider
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin TasksNotifierRef on AutoDisposeNotifierProviderRef<List<Task>> {
+mixin TasksNotifierRef on AutoDisposeAsyncNotifierProviderRef<List<Task>> {
   /// The parameter `boardId` of this provider.
   String get boardId;
 }
 
 class _TasksNotifierProviderElement
-    extends AutoDisposeNotifierProviderElement<TasksNotifier, List<Task>>
+    extends AutoDisposeAsyncNotifierProviderElement<TasksNotifier, List<Task>>
     with TasksNotifierRef {
   _TasksNotifierProviderElement(super.provider);
 

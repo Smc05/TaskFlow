@@ -24,12 +24,28 @@ class TaskRepositoryImpl implements TaskRepository {
     try {
       Logger.data('Getting tasks for board: $boardId');
 
-      // Always return local data first for fast response
-      final localTasks = await localDataSource.getTasks(boardId);
-      final tasks = localTasks.map((model) => model.toEntity()).toList();
+      // Try to fetch from remote first
+      try {
+        final remoteTasks = await remoteDataSource.getTasks(boardId);
+        Logger.data('Retrieved ${remoteTasks.length} tasks from Supabase');
 
-      Logger.data('Retrieved ${tasks.length} tasks from local storage');
-      return Results.success(tasks);
+        // Cache the remote tasks locally
+        for (final taskModel in remoteTasks) {
+          await localDataSource.saveTask(taskModel.copyWith(isSynced: true));
+        }
+
+        final tasks = remoteTasks.map((model) => model.toEntity()).toList();
+        return Results.success(tasks);
+      } on ServerException catch (e) {
+        Logger.error('Server error, falling back to local cache', e);
+        // Fall back to local cache if remote fetch fails
+        final localTasks = await localDataSource.getTasks(boardId);
+        final tasks = localTasks.map((model) => model.toEntity()).toList();
+        Logger.data(
+          'Retrieved ${tasks.length} tasks from local cache (offline)',
+        );
+        return Results.success(tasks);
+      }
     } on CacheException catch (e) {
       Logger.error('Cache error while getting tasks', e);
       return Results.failure(CacheFailure(e.message));
@@ -42,17 +58,36 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   Stream<Result<List<Task>>> watchTasks(String boardId) {
     try {
-      Logger.data('Watching tasks for board: $boardId');
+      Logger.data('Watching tasks from Supabase for board: $boardId');
 
-      return localDataSource
+      return remoteDataSource
           .watchTasks(boardId)
-          .map((models) {
+          .asyncMap((models) async {
+            // Sync each task to local cache
+            for (final taskModel in models) {
+              try {
+                await localDataSource
+                    .saveTask(taskModel.copyWith(isSynced: true));
+              } catch (e) {
+                Logger.error('Failed to cache task ${taskModel.id}', e);
+                // Continue even if caching fails
+              }
+            }
+
             final tasks = models.map((model) => model.toEntity()).toList();
+            Logger.data('Real-time update: ${tasks.length} tasks');
             return Results.success<List<Task>>(tasks);
           })
           .handleError((error) {
             Logger.error('Stream error while watching tasks', error);
-            return Results.failure<List<Task>>(StreamFailure(error.toString()));
+            // Fall back to local cache stream on error
+            return localDataSource
+                .watchTasks(boardId)
+                .map((models) {
+                  final tasks =
+                      models.map((model) => model.toEntity()).toList();
+                  return Results.success<List<Task>>(tasks);
+                });
           });
     } catch (e, stackTrace) {
       Logger.error('Error setting up task watch stream', e, stackTrace);
@@ -87,19 +122,32 @@ class TaskRepositoryImpl implements TaskRepository {
 
       final model = TaskModel.fromEntity(task);
 
-      // Save to local storage immediately
+      // Save to local storage immediately (optimistic update)
       await localDataSource.saveTask(model.copyWith(isSynced: false));
 
-      // Add to sync queue
-      await localDataSource.addToSyncQueue(
-        entityType: 'task',
-        entityId: task.id,
-        operation: 'create',
-        data: model.toJson(),
-      );
+      try {
+        // Try to create on remote
+        final createdModel = await remoteDataSource.createTask(model);
 
-      Logger.data('Task created locally: ${task.id}');
-      return Results.success(task);
+        // Update local cache with synced version
+        await localDataSource.saveTask(createdModel.copyWith(isSynced: true));
+
+        Logger.data('Task created successfully: ${task.id}');
+        return Results.success(createdModel.toEntity());
+      } on ServerException catch (e) {
+        Logger.error('Server error while creating task, queued for sync', e);
+
+        // Add to sync queue for later
+        await localDataSource.addToSyncQueue(
+          entityType: 'task',
+          entityId: task.id,
+          operation: 'create',
+          data: model.toJson(),
+        );
+
+        // Return the local version
+        return Results.success(task);
+      }
     } on CacheException catch (e) {
       Logger.error('Cache error while creating task', e);
       return Results.failure(CacheFailure(e.message));
@@ -116,19 +164,32 @@ class TaskRepositoryImpl implements TaskRepository {
 
       final model = TaskModel.fromEntity(task);
 
-      // Update in local storage immediately
+      // Update in local storage immediately (optimistic update)
       await localDataSource.saveTask(model.copyWith(isSynced: false));
 
-      // Add to sync queue
-      await localDataSource.addToSyncQueue(
-        entityType: 'task',
-        entityId: task.id,
-        operation: 'update',
-        data: model.toJson(),
-      );
+      try {
+        // Try to update on remote
+        final updatedModel = await remoteDataSource.updateTask(model);
 
-      Logger.data('Task updated locally: ${task.id}');
-      return Results.success(task);
+        // Update local cache with synced version
+        await localDataSource.saveTask(updatedModel.copyWith(isSynced: true));
+
+        Logger.data('Task updated successfully: ${task.id}');
+        return Results.success(updatedModel.toEntity());
+      } on ServerException catch (e) {
+        Logger.error('Server error while updating task, queued for sync', e);
+
+        // Add to sync queue for later
+        await localDataSource.addToSyncQueue(
+          entityType: 'task',
+          entityId: task.id,
+          operation: 'update',
+          data: model.toJson(),
+        );
+
+        // Return the local version
+        return Results.success(task);
+      }
     } on CacheException catch (e) {
       Logger.error('Cache error while updating task', e);
       return Results.failure(CacheFailure(e.message));
@@ -143,19 +204,28 @@ class TaskRepositoryImpl implements TaskRepository {
     try {
       Logger.data('Deleting task: $taskId');
 
-      // Delete from local storage immediately
+      // Delete from local storage immediately (optimistic update)
       await localDataSource.deleteTask(taskId);
 
-      // Add to sync queue
-      await localDataSource.addToSyncQueue(
-        entityType: 'task',
-        entityId: taskId,
-        operation: 'delete',
-        data: {'id': taskId},
-      );
+      try {
+        // Try to delete on remote
+        await remoteDataSource.deleteTask(taskId);
 
-      Logger.data('Task deleted locally: $taskId');
-      return Results.success(null);
+        Logger.data('Task deleted successfully: $taskId');
+        return Results.success(null);
+      } on ServerException catch (e) {
+        Logger.error('Server error while deleting task, queued for sync', e);
+
+        // Add to sync queue for later
+        await localDataSource.addToSyncQueue(
+          entityType: 'task',
+          entityId: taskId,
+          operation: 'delete',
+          data: {'id': taskId},
+        );
+
+        return Results.success(null);
+      }
     } on CacheException catch (e) {
       Logger.error('Cache error while deleting task', e);
       return Results.failure(CacheFailure(e.message));
@@ -189,7 +259,37 @@ class TaskRepositoryImpl implements TaskRepository {
         updatedAt: DateTime.now(),
       );
 
-      return updateTask(updatedTask);
+      // Optimistically update local cache
+      final model = TaskModel.fromEntity(updatedTask);
+      await localDataSource.saveTask(model.copyWith(isSynced: false));
+
+      try {
+        // Try to move on remote
+        final movedModel = await remoteDataSource.moveTask(
+          taskId: taskId,
+          newStatus: newStatus.value,
+          newOrder: newOrder,
+        );
+
+        // Update local cache with synced version
+        await localDataSource.saveTask(movedModel.copyWith(isSynced: true));
+
+        Logger.data('Task moved successfully: $taskId');
+        return Results.success(movedModel.toEntity());
+      } on ServerException catch (e) {
+        Logger.error('Server error while moving task, queued for sync', e);
+
+        // Add to sync queue for later
+        await localDataSource.addToSyncQueue(
+          entityType: 'task',
+          entityId: taskId,
+          operation: 'update',
+          data: model.toJson(),
+        );
+
+        // Return the local version
+        return Results.success(updatedTask);
+      }
     } catch (e, stackTrace) {
       Logger.error('Error while moving task', e, stackTrace);
       return Results.failure(UnexpectedFailure(e.toString()));

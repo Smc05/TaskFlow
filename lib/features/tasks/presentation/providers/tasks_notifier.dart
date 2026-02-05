@@ -1,108 +1,150 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:taskflow/core/utils/logger.dart';
 import 'package:taskflow/features/tasks/domain/entities/task_entity.dart';
+import 'package:taskflow/features/tasks/presentation/providers/task_repository_provider.dart';
 import 'package:uuid/uuid.dart';
 
 part 'tasks_notifier.g.dart';
 
-/// State notifier managing all tasks for a board
+/// Stream provider for real-time tasks from Supabase
+@riverpod
+Stream<List<Task>> tasksStream(TasksStreamRef ref, String boardId) {
+  final repository = ref.watch(taskRepositoryProvider);
+
+  Logger.data('Setting up tasks stream for board: $boardId');
+
+  return repository.watchTasks(boardId).map((result) {
+    return result.fold(
+      (failure) {
+        Logger.error('Stream error in tasksStream', failure);
+        // Return empty list on error instead of throwing
+        // This prevents the stream from breaking
+        return <Task>[];
+      },
+      (tasks) {
+        Logger.data('Stream emitted ${tasks.length} tasks');
+        return tasks;
+      },
+    );
+  });
+}
+
+/// State notifier managing task operations for a board
 @riverpod
 class TasksNotifier extends _$TasksNotifier {
   final _uuid = const Uuid();
 
   @override
-  List<Task> build(String boardId) {
-    // Initialize with some mock data for testing
-    return _generateMockTasks(boardId);
+  Future<List<Task>> build(String boardId) async {
+    // Fetch initial tasks from repository
+    final repository = ref.watch(taskRepositoryProvider);
+    final result = await repository.getTasks(boardId);
+
+    return result.fold(
+      (failure) {
+        Logger.error('Failed to load tasks', failure);
+        // Return empty list on error, user will be notified
+        return <Task>[];
+      },
+      (tasks) {
+        Logger.data('Loaded ${tasks.length} tasks for board: $boardId');
+        return tasks;
+      },
+    );
   }
 
-  /// Generate mock tasks for testing
-  List<Task> _generateMockTasks(String boardId) {
-    final now = DateTime.now();
-    return [
-      Task(
-        id: _uuid.v4(),
-        title: 'Design login screen',
-        description: 'Create mockups for the login and registration screens',
-        status: TaskStatus.todo,
-        priority: Priority.high,
-        boardId: boardId,
-        order: 0,
-        createdAt: now,
-        updatedAt: now,
-      ),
-      Task(
-        id: _uuid.v4(),
-        title: 'Setup Firebase',
-        description: 'Configure Firebase project and add to the app',
-        status: TaskStatus.todo,
-        priority: Priority.medium,
-        boardId: boardId,
-        order: 1,
-        createdAt: now,
-        updatedAt: now,
-      ),
-      Task(
-        id: _uuid.v4(),
-        title: 'Implement authentication',
-        description: 'Build login, registration, and password reset features',
-        status: TaskStatus.inProgress,
-        priority: Priority.high,
-        boardId: boardId,
-        order: 0,
-        createdAt: now,
-        updatedAt: now,
-      ),
-      Task(
-        id: _uuid.v4(),
-        title: 'Create API service',
-        description: 'Build the REST API service layer',
-        status: TaskStatus.inProgress,
-        priority: Priority.medium,
-        boardId: boardId,
-        order: 1,
-        createdAt: now,
-        updatedAt: now,
-      ),
-      Task(
-        id: _uuid.v4(),
-        title: 'Write unit tests',
-        description: 'Add unit tests for authentication module',
-        status: TaskStatus.done,
-        priority: Priority.low,
-        boardId: boardId,
-        order: 0,
-        createdAt: now,
-        updatedAt: now,
-      ),
-    ];
-  }
 
   /// Add a new task
-  void addTask(Task task) {
-    state = [...state, task];
+  Future<void> addTask(Task task) async {
+    final repository = ref.read(taskRepositoryProvider);
+
+    // Optimistically add to state
+    state = AsyncData([...state.value ?? [], task]);
+
+    final result = await repository.createTask(task);
+
+    result.fold(
+      (failure) {
+        Logger.error('Failed to create task', failure);
+        // Rollback on failure
+        state = AsyncData(
+          (state.value ?? []).where((t) => t.id != task.id).toList(),
+        );
+      },
+      (createdTask) {
+        Logger.data('Task created successfully: ${createdTask.id}');
+        // Update with server response
+        state = AsyncData([
+          for (final t in (state.value ?? []))
+            if (t.id == task.id) createdTask else t,
+        ]);
+      },
+    );
   }
 
   /// Delete a task
-  void deleteTask(String taskId) {
-    state = state.where((task) => task.id != taskId).toList();
+  Future<void> deleteTask(String taskId) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final previousState = state.value ?? [];
+
+    // Optimistically remove from state
+    state = AsyncData(previousState.where((task) => task.id != taskId).toList());
+
+    final result = await repository.deleteTask(taskId);
+
+    result.fold(
+      (failure) {
+        Logger.error('Failed to delete task', failure);
+        // Rollback on failure
+        state = AsyncData(previousState);
+      },
+      (_) {
+        Logger.data('Task deleted successfully: $taskId');
+      },
+    );
   }
 
   /// Update a task
-  void updateTask(Task updatedTask) {
-    state = [
-      for (final task in state)
+  Future<void> updateTask(Task updatedTask) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final previousState = state.value ?? [];
+
+    // Optimistically update state
+    state = AsyncData([
+      for (final task in previousState)
         if (task.id == updatedTask.id) updatedTask else task,
-    ];
+    ]);
+
+    final result = await repository.updateTask(updatedTask);
+
+    result.fold(
+      (failure) {
+        Logger.error('Failed to update task', failure);
+        // Rollback on failure
+        state = AsyncData(previousState);
+      },
+      (serverTask) {
+        Logger.data('Task updated successfully: ${serverTask.id}');
+        // Update with server response
+        state = AsyncData([
+          for (final task in (state.value ?? []))
+            if (task.id == serverTask.id) serverTask else task,
+        ]);
+      },
+    );
   }
 
   /// Reorder tasks within the same column
-  void reorderTask({
+  Future<void> reorderTask({
     required String taskId,
     required TaskStatus status,
     required int oldIndex,
     required int newIndex,
-  }) {
-    final tasks = state.where((t) => t.status == status).toList()
+  }) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final previousState = state.value ?? [];
+
+    final tasks = previousState.where((t) => t.status == status).toList()
       ..sort((a, b) => a.order.compareTo(b.order));
 
     if (oldIndex < 0 || oldIndex >= tasks.length) return;
@@ -114,24 +156,41 @@ class TasksNotifier extends _$TasksNotifier {
     // Update order for all tasks in this column
     final updatedTasks = <Task>[];
     for (int i = 0; i < tasks.length; i++) {
-      updatedTasks.add(tasks[i].copyWith(order: i, updatedAt: DateTime.now()));
+      updatedTasks.add(
+        tasks[i].copyWith(
+          order: i,
+          updatedAt: DateTime.now(),
+        ),
+      );
     }
 
-    // Merge with tasks from other columns
-    final otherTasks = state.where((t) => t.status != status).toList();
-    state = [...otherTasks, ...updatedTasks];
+    // Optimistically update state
+    final otherTasks = previousState.where((t) => t.status != status).toList();
+    state = AsyncData([...otherTasks, ...updatedTasks]);
+
+    // Update each task on the server
+    for (final task in updatedTasks) {
+      final result = await repository.updateTask(task);
+      result.fold(
+        (failure) => Logger.error('Failed to update task order', failure),
+        (_) => Logger.data('Task order updated: ${task.id}'),
+      );
+    }
   }
 
   /// Move task to a different column
-  void moveTask({
+  Future<void> moveTask({
     required String taskId,
     required TaskStatus fromStatus,
     required TaskStatus toStatus,
     required int toIndex,
-  }) {
-    final task = state.firstWhere((t) => t.id == taskId);
+  }) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final previousState = state.value ?? [];
+
+    final task = previousState.firstWhere((t) => t.id == taskId);
     final tasksInTargetColumn =
-        state.where((t) => t.status == toStatus).toList()
+        previousState.where((t) => t.status == toStatus).toList()
           ..sort((a, b) => a.order.compareTo(b.order));
 
     // Insert at the specified index
@@ -158,44 +217,81 @@ class TasksNotifier extends _$TasksNotifier {
     final updatedTargetTasks = <Task>[];
     for (int i = 0; i < tasksInTargetColumn.length; i++) {
       updatedTargetTasks.add(
-        tasksInTargetColumn[i].copyWith(order: i, updatedAt: DateTime.now()),
+        tasksInTargetColumn[i].copyWith(
+          order: i,
+          updatedAt: DateTime.now(),
+        ),
       );
     }
 
     // Update order for remaining tasks in source column
     final tasksInSourceColumn =
-        state.where((t) => t.status == fromStatus && t.id != taskId).toList()
+        previousState.where((t) => t.status == fromStatus && t.id != taskId).toList()
           ..sort((a, b) => a.order.compareTo(b.order));
 
     final updatedSourceTasks = <Task>[];
     for (int i = 0; i < tasksInSourceColumn.length; i++) {
       updatedSourceTasks.add(
-        tasksInSourceColumn[i].copyWith(order: i, updatedAt: DateTime.now()),
+        tasksInSourceColumn[i].copyWith(
+          order: i,
+          updatedAt: DateTime.now(),
+        ),
       );
     }
 
-    // Merge with tasks from other columns
-    final otherTasks = state
+    // Optimistically update state
+    final otherTasks = previousState
         .where((t) => t.status != fromStatus && t.status != toStatus)
         .toList();
+    state = AsyncData([...otherTasks, ...updatedSourceTasks, ...updatedTargetTasks]);
 
-    state = [...otherTasks, ...updatedSourceTasks, ...updatedTargetTasks];
+    // Use the moveTask method on repository for the moved task
+    final result = await repository.moveTask(
+      taskId: taskId,
+      newStatus: toStatus,
+      newOrder: toIndex,
+    );
+
+    result.fold(
+      (failure) {
+        Logger.error('Failed to move task', failure);
+        // Rollback on failure
+        state = AsyncData(previousState);
+      },
+      (_) {
+        Logger.data('Task moved successfully: $taskId');
+        // Update other tasks in the columns
+        for (final task in [...updatedSourceTasks, ...updatedTargetTasks]) {
+          if (task.id != taskId) {
+            repository.updateTask(task);
+          }
+        }
+      },
+    );
   }
 
   /// Get tasks by status
   List<Task> getTasksByStatus(TaskStatus status) {
-    return state.where((task) => task.status == status).toList()
+    return (state.value ?? [])
+        .where((task) => task.status == status)
+        .toList()
       ..sort((a, b) => a.order.compareTo(b.order));
   }
 }
 
-/// Provider for tasks grouped by status
+/// Provider for tasks grouped by status (synchronous version for compatibility)
 @riverpod
 Map<TaskStatus, List<Task>> tasksByStatus(
   TasksByStatusRef ref,
   String boardId,
 ) {
-  final tasks = ref.watch(tasksNotifierProvider(boardId));
+  final tasksAsync = ref.watch(tasksNotifierProvider(boardId));
+
+  final tasks = tasksAsync.when(
+    data: (tasks) => tasks,
+    loading: () => <Task>[],
+    error: (_, __) => <Task>[],
+  );
 
   final todoTasks = tasks.where((t) => t.status == TaskStatus.todo).toList()
     ..sort((a, b) => a.order.compareTo(b.order));
