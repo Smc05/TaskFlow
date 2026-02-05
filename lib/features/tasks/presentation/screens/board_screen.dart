@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:taskflow/core/constants/app_dimensions.dart';
 import 'package:taskflow/features/tasks/domain/entities/task_entity.dart';
 import 'package:taskflow/features/tasks/presentation/providers/tasks_notifier.dart';
+import 'package:taskflow/features/tasks/presentation/widgets/add_task_dialog.dart';
+import 'package:taskflow/features/tasks/presentation/widgets/edit_task_dialog.dart';
 import 'package:taskflow/features/tasks/presentation/widgets/board_column.dart';
 import 'package:taskflow/shared/widgets/sync_status_widgets.dart';
 
@@ -60,8 +62,20 @@ class BoardScreen extends ConsumerWidget {
                     onTaskMoved: (Task task, int toIndex) {
                       _handleMove(ref, task, TaskStatus.todo, toIndex);
                     },
+                    onTaskTap: (Task task) {
+                      showDialog(
+                        context: context,
+                        builder: (context) => EditTaskDialog(task: task),
+                      );
+                    },
                     onAddTask: () {
-                      // TODO: Show add task dialog
+                      showDialog(
+                        context: context,
+                        builder: (context) => AddTaskDialog(
+                          boardId: boardId,
+                          initialStatus: TaskStatus.todo,
+                        ),
+                      );
                     },
                   ),
                   const SizedBox(width: AppDimensions.columnSpacing),
@@ -82,8 +96,20 @@ class BoardScreen extends ConsumerWidget {
                     onTaskMoved: (Task task, int toIndex) {
                       _handleMove(ref, task, TaskStatus.inProgress, toIndex);
                     },
+                    onTaskTap: (Task task) {
+                      showDialog(
+                        context: context,
+                        builder: (context) => EditTaskDialog(task: task),
+                      );
+                    },
                     onAddTask: () {
-                      // TODO: Show add task dialog
+                      showDialog(
+                        context: context,
+                        builder: (context) => AddTaskDialog(
+                          boardId: boardId,
+                          initialStatus: TaskStatus.inProgress,
+                        ),
+                      );
                     },
                   ),
                   const SizedBox(width: AppDimensions.columnSpacing),
@@ -99,8 +125,20 @@ class BoardScreen extends ConsumerWidget {
                     onTaskMoved: (Task task, int toIndex) {
                       _handleMove(ref, task, TaskStatus.done, toIndex);
                     },
+                    onTaskTap: (Task task) {
+                      showDialog(
+                        context: context,
+                        builder: (context) => EditTaskDialog(task: task),
+                      );
+                    },
                     onAddTask: () {
-                      // TODO: Show add task dialog
+                      showDialog(
+                        context: context,
+                        builder: (context) => AddTaskDialog(
+                          boardId: boardId,
+                          initialStatus: TaskStatus.done,
+                        ),
+                      );
                     },
                   ),
                 ],
@@ -111,7 +149,12 @@ class BoardScreen extends ConsumerWidget {
       ),
       floatingActionButton: SyncFAB(
         onAddTask: () {
-          // TODO: Show add task dialog
+          showDialog(
+            context: context,
+            builder: (context) => AddTaskDialog(
+              boardId: boardId,
+            ),
+          );
         },
       ),
     );

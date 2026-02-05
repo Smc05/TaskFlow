@@ -21,6 +21,7 @@ class BoardColumn extends StatefulWidget {
   final List<Task> tasks;
   final void Function(int oldIndex, int newIndex)? onTaskReordered;
   final void Function(Task task, int toIndex)? onTaskMoved;
+  final void Function(Task task)? onTaskTap;
   final VoidCallback? onAddTask;
 
   const BoardColumn({
@@ -30,6 +31,7 @@ class BoardColumn extends StatefulWidget {
     required this.tasks,
     this.onTaskReordered,
     this.onTaskMoved,
+    this.onTaskTap,
     this.onAddTask,
   });
 
@@ -157,7 +159,7 @@ class _BoardColumnState extends State<BoardColumn> {
                             task: task,
                             sourceStatus: widget.status,
                             onTap: () {
-                              // TODO: Show task details
+                              widget.onTaskTap?.call(task);
                             },
                           );
                         },
