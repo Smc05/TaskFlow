@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taskflow/core/network/network_info.dart';
 import 'package:taskflow/core/sync/models/sync_operation.dart';
+import 'package:taskflow/core/sync/sync_status.dart';
 import 'package:taskflow/core/utils/logger.dart';
 import 'package:taskflow/features/tasks/data/datasources/task_local_datasource.dart';
 import 'package:taskflow/features/tasks/data/datasources/task_remote_datasource.dart';
@@ -108,11 +109,11 @@ class SyncManager {
       );
     } catch (e, stackTrace) {
       Logger.error('Sync failed', e, stackTrace);
-      _updateStatus(SyncStatus.failed);
+      _updateStatus(SyncStatus.failed(e.toString()));
       errors.add(e.toString());
       
       return SyncResult(
-        status: SyncStatus.failed,
+        status: SyncStatus.failed(e.toString()),
         successCount: successCount,
         failureCount: failureCount,
         errors: errors,

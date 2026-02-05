@@ -4,6 +4,7 @@ import 'package:taskflow/core/constants/app_dimensions.dart';
 import 'package:taskflow/features/tasks/domain/entities/task_entity.dart';
 import 'package:taskflow/features/tasks/presentation/providers/tasks_notifier.dart';
 import 'package:taskflow/features/tasks/presentation/widgets/board_column.dart';
+import 'package:taskflow/shared/widgets/sync_status_widgets.dart';
 
 /// Main board screen displaying the Kanban board
 class BoardScreen extends ConsumerWidget {
@@ -21,75 +22,97 @@ class BoardScreen extends ConsumerWidget {
     final tasksByStatus = ref.watch(tasksByStatusProvider(boardId));
 
     return Scaffold(
-      appBar: AppBar(title: Text(boardName), centerTitle: true),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: AppDimensions.paddingLarge,
-        ),
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.paddingMedium,
+      appBar: AppBar(
+        title: Text(boardName),
+        centerTitle: true,
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 16.0),
+            child: SyncStatusIndicator(),
           ),
-          children: [
-            // Todo Column
-            BoardColumn(
-              title: 'To Do',
-              status: TaskStatus.todo,
-              tasks: tasksByStatus[TaskStatus.todo] ?? [],
-              onTaskReordered: (int oldIndex, int newIndex) {
-                _handleReorder(ref, TaskStatus.todo, oldIndex, newIndex);
-              },
-              onTaskMoved: (Task task, int toIndex) {
-                _handleMove(ref, task, TaskStatus.todo, toIndex);
-              },
-              onAddTask: () {
-                // TODO: Show add task dialog
-              },
-            ),
-            const SizedBox(width: AppDimensions.columnSpacing),
-
-            // In Progress Column
-            BoardColumn(
-              title: 'In Progress',
-              status: TaskStatus.inProgress,
-              tasks: tasksByStatus[TaskStatus.inProgress] ?? [],
-              onTaskReordered: (int oldIndex, int newIndex) {
-                _handleReorder(ref, TaskStatus.inProgress, oldIndex, newIndex);
-              },
-              onTaskMoved: (Task task, int toIndex) {
-                _handleMove(ref, task, TaskStatus.inProgress, toIndex);
-              },
-              onAddTask: () {
-                // TODO: Show add task dialog
-              },
-            ),
-            const SizedBox(width: AppDimensions.columnSpacing),
-
-            // Done Column
-            BoardColumn(
-              title: 'Done',
-              status: TaskStatus.done,
-              tasks: tasksByStatus[TaskStatus.done] ?? [],
-              onTaskReordered: (int oldIndex, int newIndex) {
-                _handleReorder(ref, TaskStatus.done, oldIndex, newIndex);
-              },
-              onTaskMoved: (Task task, int toIndex) {
-                _handleMove(ref, task, TaskStatus.done, toIndex);
-              },
-              onAddTask: () {
-                // TODO: Show add task dialog
-              },
-            ),
-          ],
-        ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
+      body: Column(
+        children: [
+          // Sync status banner
+          const SyncStatusBanner(),
+          
+          // Board columns
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: AppDimensions.paddingLarge,
+              ),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.paddingMedium,
+                ),
+                children: [
+                  // Todo Column
+                  BoardColumn(
+                    title: 'To Do',
+                    status: TaskStatus.todo,
+                    tasks: tasksByStatus[TaskStatus.todo] ?? [],
+                    onTaskReordered: (int oldIndex, int newIndex) {
+                      _handleReorder(ref, TaskStatus.todo, oldIndex, newIndex);
+                    },
+                    onTaskMoved: (Task task, int toIndex) {
+                      _handleMove(ref, task, TaskStatus.todo, toIndex);
+                    },
+                    onAddTask: () {
+                      // TODO: Show add task dialog
+                    },
+                  ),
+                  const SizedBox(width: AppDimensions.columnSpacing),
+
+                  // In Progress Column
+                  BoardColumn(
+                    title: 'In Progress',
+                    status: TaskStatus.inProgress,
+                    tasks: tasksByStatus[TaskStatus.inProgress] ?? [],
+                    onTaskReordered: (int oldIndex, int newIndex) {
+                      _handleReorder(
+                        ref,
+                        TaskStatus.inProgress,
+                        oldIndex,
+                        newIndex,
+                      );
+                    },
+                    onTaskMoved: (Task task, int toIndex) {
+                      _handleMove(ref, task, TaskStatus.inProgress, toIndex);
+                    },
+                    onAddTask: () {
+                      // TODO: Show add task dialog
+                    },
+                  ),
+                  const SizedBox(width: AppDimensions.columnSpacing),
+
+                  // Done Column
+                  BoardColumn(
+                    title: 'Done',
+                    status: TaskStatus.done,
+                    tasks: tasksByStatus[TaskStatus.done] ?? [],
+                    onTaskReordered: (int oldIndex, int newIndex) {
+                      _handleReorder(ref, TaskStatus.done, oldIndex, newIndex);
+                    },
+                    onTaskMoved: (Task task, int toIndex) {
+                      _handleMove(ref, task, TaskStatus.done, toIndex);
+                    },
+                    onAddTask: () {
+                      // TODO: Show add task dialog
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: SyncFAB(
+        onAddTask: () {
           // TODO: Show add task dialog
         },
-        tooltip: 'Add Task',
-        child: const Icon(Icons.add),
       ),
     );
   }

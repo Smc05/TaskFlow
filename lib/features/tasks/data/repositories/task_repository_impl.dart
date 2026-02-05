@@ -22,30 +22,17 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   AsyncResult<List<Task>> getTasks(String boardId) async {
     try {
-      Logger.data('Getting tasks for board: $boardId');
+      Logger.data('Getting tasks for board: $boardId (local-first)');
 
-      // Try to fetch from remote first
-      try {
-        final remoteTasks = await remoteDataSource.getTasks(boardId);
-        Logger.data('Retrieved ${remoteTasks.length} tasks from Supabase');
+      // ALWAYS return from local database first (fast, works offline)
+      final localTasks = await localDataSource.getTasks(boardId);
+      final tasks = localTasks.map((model) => model.toEntity()).toList();
+      Logger.data('Retrieved ${tasks.length} tasks from local DB');
 
-        // Cache the remote tasks locally
-        for (final taskModel in remoteTasks) {
-          await localDataSource.saveTask(taskModel.copyWith(isSynced: true));
-        }
+      // Sync with remote in the background (don't wait)
+      _syncInBackground(boardId);
 
-        final tasks = remoteTasks.map((model) => model.toEntity()).toList();
-        return Results.success(tasks);
-      } on ServerException catch (e) {
-        Logger.error('Server error, falling back to local cache', e);
-        // Fall back to local cache if remote fetch fails
-        final localTasks = await localDataSource.getTasks(boardId);
-        final tasks = localTasks.map((model) => model.toEntity()).toList();
-        Logger.data(
-          'Retrieved ${tasks.length} tasks from local cache (offline)',
-        );
-        return Results.success(tasks);
-      }
+      return Results.success(tasks);
     } on CacheException catch (e) {
       Logger.error('Cache error while getting tasks', e);
       return Results.failure(CacheFailure(e.message));
@@ -55,40 +42,59 @@ class TaskRepositoryImpl implements TaskRepository {
     }
   }
 
+  /// Sync tasks from remote to local in the background
+  Future<void> _syncInBackground(String boardId) async {
+    try {
+      final remoteTasks = await remoteDataSource.getTasks(boardId);
+      Logger.data('Background sync: fetched ${remoteTasks.length} tasks');
+
+      // Update local cache with remote data
+      for (final taskModel in remoteTasks) {
+        await localDataSource.saveTask(taskModel.copyWith(isSynced: true));
+      }
+      Logger.data('Background sync completed');
+    } on ServerException catch (e) {
+      Logger.error('Background sync failed (offline?)', e);
+      // Silently fail - user is already seeing local data
+    } catch (e) {
+      Logger.error('Unexpected error during background sync', e);
+    }
+  }
+
   @override
   Stream<Result<List<Task>>> watchTasks(String boardId) {
     try {
-      Logger.data('Watching tasks from Supabase for board: $boardId');
+      Logger.data('Watching tasks (local-first) for board: $boardId');
 
-      return remoteDataSource
+      // ALWAYS watch local database as primary source
+      final localStream = localDataSource
           .watchTasks(boardId)
-          .asyncMap((models) async {
-            // Sync each task to local cache
+          .map((models) {
+            final tasks = models.map((model) => model.toEntity()).toList();
+            return Results.success<List<Task>>(tasks);
+          });
+
+      // Subscribe to remote updates in background to keep local in sync
+      remoteDataSource
+          .watchTasks(boardId)
+          .listen((models) async {
+            // Update local cache with remote changes
             for (final taskModel in models) {
               try {
                 await localDataSource
                     .saveTask(taskModel.copyWith(isSynced: true));
               } catch (e) {
-                Logger.error('Failed to cache task ${taskModel.id}', e);
-                // Continue even if caching fails
+                Logger.error('Failed to sync task ${taskModel.id}', e);
               }
             }
-
-            final tasks = models.map((model) => model.toEntity()).toList();
-            Logger.data('Real-time update: ${tasks.length} tasks');
-            return Results.success<List<Task>>(tasks);
-          })
-          .handleError((error) {
-            Logger.error('Stream error while watching tasks', error);
-            // Fall back to local cache stream on error
-            return localDataSource
-                .watchTasks(boardId)
-                .map((models) {
-                  final tasks =
-                      models.map((model) => model.toEntity()).toList();
-                  return Results.success<List<Task>>(tasks);
-                });
+            Logger.data('Real-time sync: updated ${models.length} tasks');
+          },
+          onError: (error) {
+            Logger.error('Remote stream error (offline?)', error);
+            // Continue with local stream
           });
+
+      return localStream;
     } catch (e, stackTrace) {
       Logger.error('Error setting up task watch stream', e, stackTrace);
       return Stream.value(Results.failure(StreamFailure(e.toString())));
